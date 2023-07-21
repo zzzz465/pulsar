@@ -29,6 +29,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Strings;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -39,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.client.api.Message;
@@ -83,7 +85,7 @@ public class ElasticSearchSink implements Sink<GenericObject> {
         if (elasticSearchConfig.isCanonicalKeyFields()) {
             sortedObjectMapper = JsonMapper
                     .builder()
-                            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                    .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
                     .nodeFactory(new JsonNodeFactory() {
                         @Override
                         public ObjectNode objectNode() {
@@ -136,7 +138,10 @@ public class ElasticSearchSink implements Sink<GenericObject> {
                     }
                 } else {
                     if (elasticSearchConfig.isBulkEnabled()) {
-                        elasticsearchClient.bulkIndex(record, idAndDoc);
+                        switch (elasticSearchConfig.getIndexType()) {
+                            case INDEX -> elasticsearchClient.bulkIndex(record, idAndDoc);
+                            case DATA_STREAM -> elasticsearchClient.bulkCreate(record, idAndDoc);
+                        }
                     } else {
                         elasticsearchClient.indexDocument(record, idAndDoc);
                     }
@@ -200,7 +205,7 @@ public class ElasticSearchSink implements Sink<GenericObject> {
 
             String id = null;
             if (!elasticSearchConfig.isKeyIgnore() && key != null) {
-                if (keySchema != null){
+                if (keySchema != null) {
                     id = stringifyKey(keySchema, key);
                 } else {
                     id = key.toString();
@@ -282,7 +287,7 @@ public class ElasticSearchSink implements Sink<GenericObject> {
             }
             doc = sanitizeValue(doc);
             return Pair.of(id, doc);
-    } else {
+        } else {
             Message message = record.getMessage().orElse(null);
             final String rawData;
             if (message != null) {
@@ -291,7 +296,7 @@ public class ElasticSearchSink implements Sink<GenericObject> {
                 GenericObject recordObject = getGenericObjectFromRecord(record);
                 rawData = stringifyValue(record.getSchema(), recordObject);
             }
-            if (rawData == null || rawData.length() == 0){
+            if (rawData == null || rawData.length() == 0) {
                 throw new IllegalArgumentException("Record does not carry message information.");
             }
             String key = elasticSearchConfig.isKeyIgnore() ? null : record.getKey().map(Object::toString).orElse(null);
@@ -299,11 +304,11 @@ public class ElasticSearchSink implements Sink<GenericObject> {
         }
     }
 
-    private GenericObject getGenericObjectFromRecord(Record record){
+    private GenericObject getGenericObjectFromRecord(Record record) {
         if (record.getValue() == null) {
             return null;
         }
-        if (record.getValue() instanceof GenericObject){
+        if (record.getValue() instanceof GenericObject) {
             return (GenericObject) record.getValue();
         }
         return new GenericObject() {
